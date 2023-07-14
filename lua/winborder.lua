@@ -55,7 +55,6 @@ function M.create_buffer()
 		api.nvim_buf_set_option(M.buf, "buflisted", false)
 		api.nvim_buf_set_option(M.buf, "filetype", "winborder")
 		api.nvim_buf_set_option(M.buf, "modifiable", false)
-		api.nvim_buf_set_name(M.buf, "winborder")
 	end
 end
 
