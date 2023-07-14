@@ -71,6 +71,9 @@ end
 function M.disable()
 	M.close_window()
 	M.del_autocmds()
+	if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
+		vim.api.nvim_buf_delete(M.buf, { force = true })
+	end
 	M.enabled = false
 end
 
