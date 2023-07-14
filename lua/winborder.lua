@@ -198,6 +198,13 @@ function M.get_win_config()
 		dw = 1
 	end
 
+	if dx == 0 and dw == 0 then
+		dx = 1
+	end
+	if dy == 0 and dh == 0 then
+		dy = 1
+	end
+
 	w = w - dw
 	h = h - dh
 	local row, col = pos[1] - dy, pos[2] - dx
