@@ -49,11 +49,11 @@ end
 
 function M.create_buffer()
 	if M.buf == nil then
-		M.buf = api.nvim_create_buf(false, true)
+		M.buf = api.nvim_create_buf(false, false)
 		api.nvim_buf_set_option(M.buf, "buftype", "nofile")
 		api.nvim_buf_set_option(M.buf, "swapfile", false)
 		api.nvim_buf_set_option(M.buf, "buflisted", false)
-		api.nvim_buf_set_option(M.buf, "filetype", "winborder")
+		api.nvim_buf_set_option(M.buf, "filetype", "")
 		api.nvim_buf_set_option(M.buf, "modifiable", false)
 	end
 end
@@ -61,17 +61,18 @@ end
 M.enabled = false
 
 function M.enable()
+	M.create_autocmds()
 	M.create_buffer()
 	M.create_window()
-	M.create_autocmds()
 	M.enabled = true
 end
 
 function M.disable()
-	M.close_window()
 	M.del_autocmds()
-	if M.buf and vim.api.nvim_buf_is_valid(M.buf) then
-		vim.api.nvim_buf_delete(M.buf, { force = true })
+	M.close_window()
+	if M.buf ~= nil and api.nvim_buf_is_valid(M.buf) then
+		api.nvim_buf_delete(M.buf, { force = true })
+		M.buf = nil
 	end
 	M.enabled = false
 end
@@ -102,11 +103,17 @@ end
 
 function M.create_highlight()
 	api.nvim_set_hl(0, "SepBorder", M.config.hl)
+	api.nvim_set_hl(0, "SepBorderNone", {
+		nocombine = true,
+		blend = 100,
+		bg = "NONE",
+		fg = "NONE",
+	})
 end
 
 function M.create_window()
 	local curwin = api.nvim_get_current_win()
-	local w, h, row, col = M.get_win_config()
+	local w, h, row, col, border = M.get_win_config()
 	M.win = api.nvim_open_win(M.buf, false, {
 		relative = "editor",
 		width = w,
@@ -115,64 +122,62 @@ function M.create_window()
 		row = row,
 		col = col,
 		style = "minimal",
-		border = {
-			"┏",
-			"━",
-			"┓",
-			"┃",
-			"┛",
-			"━",
-			"┗",
-			"┃",
-		},
+		zindex = 10,
+		border = border,
+		noautocmd = true,
+	})
+	vim.api.nvim_create_autocmd("WinClosed", {
+		buffer = M.buf,
+		callback = function()
+			vim.schedule(function()
+				vim.api.nvim_buf_delete(M.buf, { force = true })
+			end)
+		end,
 	})
 	api.nvim_win_set_option(M.win, "winhighlight", "FloatBorder:SepBorder")
 	api.nvim_win_set_option(M.win, "winblend", 100)
-	if M.is_top_edge(vim.api.nvim_win_get_position(M.win)) then
-		M.last_winbar = vim.api.nvim_win_get_option(curwin, "winbar") or ""
-		api.nvim_win_set_option(curwin, "winbar", "")
-	end
 	M.last_win = curwin
 end
 
 function M.close_window()
-	if M.win then
+	if M.win ~= nil then
 		api.nvim_win_close(M.win, true)
 		M.win = nil
 	end
 	M.last_win = nil
-	M.last_winbar = nil
 end
 
 function M.update_window()
 	-- close if only one window visible
-	if vim.fn.winlayout()[1] == "leaf" then
+	if M.enabled == false or vim.fn.winlayout()[1] == "leaf" then
 		M.close_window()
 		return
 	end
 	local curwin = api.nvim_get_current_win()
-	if M.last_win and vim.api.nvim_win_is_valid(M.last_win) then
-		vim.api.nvim_win_set_option(M.last_win, "winbar", M.last_winbar or "")
-	end
 	M.last_win = curwin
 	if not M.win then
 		M.create_window()
 	end
-	local w, h, row, col = M.get_win_config()
+	local w, h, row, col, border = M.get_win_config()
 	local conf = api.nvim_win_get_config(M.win)
+	conf.border = border
 	conf.width = w
 	conf.height = h
 	conf.row = row
 	conf.col = col
 	api.nvim_win_set_config(M.win, conf)
-
-	if M.is_top_edge(vim.api.nvim_win_get_position(curwin)) then
-		M.last_winbar = api.nvim_win_get_option(curwin, "winbar")
-		api.nvim_win_set_option(curwin, "winbar", " ")
-	else
-		M.last_winbar = nil
-	end
 end
+
+local Border = {
+	TopLeft = 1,
+	Top = 2,
+	TopRight = 3,
+	Right = 4,
+	BotRight = 5,
+	Bot = 6,
+	BotLeft = 7,
+	Left = 8,
+}
 
 function M.get_win_config()
 	local curwin = api.nvim_get_current_win()
@@ -180,20 +185,61 @@ function M.get_win_config()
 	local h = api.nvim_win_get_height(curwin)
 	local pos = api.nvim_win_get_position(curwin)
 
+	local border = {
+		-- "┏",
+		-- "━",
+		-- "┓",
+		-- "┃",
+		-- "┛",
+		-- "━",
+		-- "┗",
+		-- "┃",
+		{ " ", "SepBorderNone" },
+		{ " ", "SepBorderNone" },
+		{ " ", "SepBorderNone" },
+		{ "┃", "SepBorder" },
+		{ " ", "SepBorderNone" },
+		{ " ", "SepBorderNone" },
+		{ " ", "SepBorderNone" },
+		{ "┃", "SepBorder" },
+	}
 	local dy = 0
 	local dx = 0
 	local dw = 0
 	local dh = 0
 	if M.is_top_edge(pos) then
+		border[Border.Top] = { " ", "SepBorderNone" }
+		border[Border.TopRight] = { "┃", "SepBorder" }
 		dh = 1
+	else
+		border[Border.TopRight] = { "┓", "SepBorder" }
+		border[Border.Top] = { "━", "SepBorder" }
 	end
 	if M.is_bottom_edge(pos, h) then
+		border[Border.Bot] = { " ", "SepBorderNone" }
 		dy = dh > 0 and 0 or 1
 		dh = dh + 1
+		border[Border.BotLeft] = { "┃", "SepBorder" }
+		border[Border.BotRight] = { "┃", "SepBorder" }
+	else
+		border[Border.Bot] = { "━", "SepBorder" }
+		border[Border.BotLeft] = { "┗", "SepBorder" }
+		border[Border.BotRight] = { "┛", "SepBorder" }
 	end
 
 	if M.is_left_edge(pos) then
+		border[Border.TopLeft] = { " ", "SepBorderNone" }
 		dw = 1
+		if not M.is_top_edge(pos) then
+			border[Border.TopLeft] = { "┏", "SepBorder" }
+		end
+	else
+		border[Border.Left] = { "┃", "SepBorder" }
+		if M.is_top_edge(pos) then
+			border[Border.TopLeft] = { "┃", "SepBorder" }
+		else
+			border[Border.TopLeft] = { "┏", "SepBorder" }
+		end
 	end
 	if M.is_right_edge(pos, w) then
 		dx = dw > 0 and 0 or 1
@@ -210,7 +256,7 @@ function M.get_win_config()
 	w = w - dw
 	h = h - dh
 	local row, col = pos[1] - dy, pos[2] - dx
-	return w, h, row, col
+	return w, h, row, col, border
 end
 
 function M.is_left_edge(pos)
